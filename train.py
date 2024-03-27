@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-from models.model import LeNet_5
+from models.model import DigitalNet_1
 from torchvision import datasets, transforms
 from torch.autograd import Variable
 
@@ -42,6 +42,7 @@ def train(epoch):
 def test(evaluate=False):
     global best_acc
     model.eval()
+    model.binarize_weights()
     test_loss = 0
     correct = 0
 
@@ -131,7 +132,7 @@ if __name__=='__main__':
     
     # generate the model
     if args.arch == 'LeNet_5':
-        model = LeNet_5()
+        model = DigitalNet_1()
     else:
         print('ERROR: specified arch is not suppported')
         exit()
@@ -160,7 +161,7 @@ if __name__=='__main__':
     optimizer = optim.Adam(params, lr=args.lr,
             weight_decay=args.weight_decay)
 
-    criterion = nn.CrossEntropyLoss()
+    criterion = torch.nn.CrossEntropyLoss()
 
     if args.evaluate:
         test(evaluate=True)
