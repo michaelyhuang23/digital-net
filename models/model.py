@@ -71,6 +71,31 @@ class SignConv(torch.nn.Module):
         return folded_p_actives
 
 
+class SignOrPool2d(torch.nn.Module):
+    def __init__(self, kernel_size, stride=None, padding=0):
+        super(SignOrPool2d, self).__init__()
+        self.kernel_size = kernel_size
+        self.stride = stride
+        self.padding = padding
+        self.unfold = nn.Unfold(kernel_size, padding=padding, stride=stride)
+
+    def forward(self, p_x):
+        batch_size = p_x.shape[0]
+
+        output_height = (p_x.shape[-2] - self.kernel_size + 2 * self.padding) // self.stride + 1
+        output_weight = (p_x.shape[-1] - self.kernel_size + 2 * self.padding) // self.stride + 1
+
+        p_x = rearrange(p_x, 'b c h w -> (b c) 1 h w')
+        expanded_p_x = self.unfold(p_x) # (B * C, 1*kernel_size*kernel_size, H_out*W_out)
+
+        expanded_p_actives = 1 - (1 - expanded_p_x).prod(dim=-2)
+        folded_p_actives = expanded_p_actives.reshape(-1, 1, output_height, output_weight)
+
+        folded_p_actives = rearrange(folded_p_actives, '(b c) 1 h w -> b c h w', b=batch_size)
+        return folded_p_actives
+
+
+
 class LeNet_5(nn.Module):
     def __init__(self):
         super(LeNet_5, self).__init__()
@@ -94,8 +119,8 @@ if __name__ == '__main__':
     x = torch.sigmoid(torch.arange(B*C*H*W).view(B, C, H, W).float())
 
     kernel_h, kernel_w = 2, 2
-    stride = 1
+    stride = 2
 
-    model = SignConv(3, 6, 2, 1, 0)
+    model = SignOrPool2d(kernel_size=kernel_h, stride=stride)
 
-    model(x)
+    print(model(x).shape)
