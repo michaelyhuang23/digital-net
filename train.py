@@ -8,6 +8,17 @@ from models.model import DigitalNet_1
 from torchvision import datasets, transforms
 from torch.autograd import Variable
 
+class BinaryMNIST(datasets.MNIST):
+    def __init__(self, *args, classes=[0, 1], **kwargs):
+        super(BinaryMNIST, self).__init__(*args, **kwargs)
+
+        # Get the indices of the samples in the specified classes
+        indices = [i for i, target in enumerate(self.targets) if target in classes]
+
+        # Filter the data and targets to only include those samples
+        self.data = self.data[indices]
+        self.targets = self.targets[indices]
+
 def save_state(model, acc):
     print('==> Saving model ...')
     state = {
@@ -29,6 +40,8 @@ def train(epoch):
         optimizer.zero_grad()
 
         output = model(data)
+
+        target = torch.nn.functional.one_hot(target, num_classes=2).float()
         loss = criterion(output, target)
         loss.backward()
 
@@ -51,9 +64,10 @@ def test(evaluate=False):
             data, target = data.cuda(), target.cuda()
         data, target = Variable(data, volatile=True), Variable(target)
         output = model(data)
-        test_loss += criterion(output, target).data.item()
-        pred = output.data.max(1, keepdim=True)[1]
-        correct += pred.eq(target.data.view_as(pred)).cpu().sum()
+        target_labels = target.view(-1, 1) 
+        test_loss += criterion(output, torch.nn.functional.one_hot(target, num_classes=2).float()).data.item()
+        pred = output.data.argmax(dim=1, keepdim=True)
+        correct += pred.eq(target_labels).cpu().sum()
     
     acc = 100. * float(correct) / len(test_loader.dataset)
     if (acc > best_acc):
@@ -117,18 +131,21 @@ if __name__=='__main__':
     # load data
     kwargs = {'num_workers': 1, 'pin_memory': True} if args.cuda else {}
     train_loader = torch.utils.data.DataLoader(
-            datasets.MNIST('data', train=True, download=True,
-                transform=transforms.Compose([
-                    transforms.ToTensor(),
-                    transforms.Normalize((0.1307,), (0.3081,))
-                    ])),
-                batch_size=args.batch_size, shuffle=True, **kwargs)
+        BinaryMNIST('data', train=True, download=True,
+        transform=transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize((0.1307,), (0.3081,))
+        ])),
+        batch_size=args.batch_size, shuffle=True, **kwargs
+    )
+
     test_loader = torch.utils.data.DataLoader(
-            datasets.MNIST('data', train=False, transform=transforms.Compose([
-                transforms.ToTensor(),
-                transforms.Normalize((0.1307,), (0.3081,))
-                ])),
-            batch_size=args.test_batch_size, shuffle=True, **kwargs)
+        BinaryMNIST('data', train=False, transform=transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize((0.1307,), (0.3081,))
+        ])),
+        batch_size=args.test_batch_size, shuffle=True, **kwargs
+    )
     
     # generate the model
     if args.arch == 'LeNet_5':
@@ -161,7 +178,7 @@ if __name__=='__main__':
     optimizer = optim.Adam(params, lr=args.lr,
             weight_decay=args.weight_decay)
 
-    criterion = torch.nn.CrossEntropyLoss()
+    criterion = torch.nn.BCELoss()
 
     if args.evaluate:
         test(evaluate=True)

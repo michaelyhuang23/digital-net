@@ -145,7 +145,7 @@ class DigitalNet_1(nn.Module):
         self.conv3 = SignConv(50, 50, kernel_size=3, stride=2, padding=0)
         self.linear1 = SignLinear(50*5*5, 500)
         self.linear2 = SignLinear(500, 30)
-        self.linear3 = nn.Linear(30, 10)
+        self.linear3 = nn.Linear(30, 2)
 
     def forward(self, x):
         x = torch.sigmoid(self.conv1(x))
@@ -155,6 +155,7 @@ class DigitalNet_1(nn.Module):
         x = self.linear1(x)
         x = self.linear2(x)
         x = self.linear3(x)
+        x = torch.sigmoid(x)
         return x
     
     def binarize_weights(self):
