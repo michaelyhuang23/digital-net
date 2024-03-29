@@ -3,6 +3,17 @@ from torch import nn
 from einops import rearrange
 import math
 
+class Binarize(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, x): # input: 0-1, output: 0 or 1
+        x = torch.round(x)
+        return x
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        grad_input = grad_output.clone()
+        return grad_input
+
 def get_conv_output_size(input_size, kernel_size, stride, padding):
     return (input_size - kernel_size + 2 * padding) // stride + 1
 
@@ -38,7 +49,7 @@ class SignLinear(torch.nn.Module):
         return p_actives
     
     def inference_forward(self, x):
-        return torch.sign(x @ self.binarized_weight.t())
+        return torch.sign(x @ self.binarized_weight.t() + 0.5)
     
 
 
@@ -94,7 +105,7 @@ class SignConv(torch.nn.Module):
         expanded_x = self.unfold(x) # (B, C*kernel_size*kernel_size, H_out*W_out)
         expanded_x = rearrange(expanded_x, 'b c l -> (b l) c') 
 
-        expanded_x = torch.sign(expanded_x @ self.binarized_weight.t())
+        expanded_x = torch.sign(expanded_x @ self.binarized_weight.t() + 0.5)
 
         expanded_x = rearrange(expanded_x, '(b l) c -> b c l', b=batch_size) 
         folded_x = expanded_x.reshape(batch_size, self.out_features, output_height, output_width)
@@ -141,23 +152,29 @@ class DigitalNet_1(nn.Module):
     def __init__(self):
         super(DigitalNet_1, self).__init__()
         self.conv1 = nn.Conv2d(1, 20, kernel_size=3, stride=1)
-        self.conv2 = SignConv(20, 50, kernel_size=3, stride=2, padding=0)
+        self.conv2 = SignConv(1, 50, kernel_size=3, stride=2, padding=0)
         self.conv3 = SignConv(50, 50, kernel_size=3, stride=2, padding=0)
-        self.linear1 = SignLinear(50*5*5, 500)
-        self.linear2 = SignLinear(500, 30)
-        self.linear3 = nn.Linear(30, 10)
+        self.linear1 = SignLinear(50*6*6, 500)
+        self.linear2 = SignLinear(500, 4)
 
     def forward(self, x):
-        x = torch.sigmoid(self.conv1(x))
+        #x = torch.sigmoid(self.conv1(x))
+        if not self.training:
+            x = torch.sign(x-0.5)  # or use sampling, idk
+        else:
+            #x = Binarize.apply(x)
+            pass
         x = self.conv2(x)
         x = self.conv3(x)
-        x = x.reshape(-1, 50*5*5)
+        x = x.reshape(-1, 50*6*6)
         x = self.linear1(x)
         x = self.linear2(x)
-        x = self.linear3(x)
+        if not self.training:
+            x = (x + 1) / 2 # for usage
+            #pass # for testing
         return x
     
-    def binarize_weights(self):
+    def binarize_weight(self):
         for module in self.children():
             if hasattr(module, 'binarize_weight'):
                 module.binarize_weight()

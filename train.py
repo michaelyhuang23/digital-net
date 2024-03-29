@@ -8,6 +8,18 @@ from models.model import DigitalNet_1
 from torchvision import datasets, transforms
 from torch.autograd import Variable
 
+def binary_number_criterion(pred, target):
+    # [0,1,1,0], [9]
+    loss = 0
+    for i in range(pred.shape[-1]):
+        loss += F.binary_cross_entropy(pred[..., i], ((target>>i) & 1).float())
+    return loss
+
+def binary_number_correct(output, target):
+    output = torch.round(output).long()
+    pred = sum(output[..., i] * (2**i) for i in range(output.shape[-1]))
+    return (pred == target).sum()
+
 def save_state(model, acc):
     print('==> Saving model ...')
     state = {
@@ -29,7 +41,8 @@ def train(epoch):
         optimizer.zero_grad()
 
         output = model(data)
-        loss = criterion(output, target)
+        #print(output[0])
+        loss = binary_number_criterion(output, target)
         loss.backward()
 
         optimizer.step()
@@ -42,7 +55,7 @@ def train(epoch):
 def test(evaluate=False):
     global best_acc
     model.eval()
-    model.binarize_weights()
+    model.binarize_weight()
     test_loss = 0
     correct = 0
 
@@ -51,9 +64,8 @@ def test(evaluate=False):
             data, target = data.cuda(), target.cuda()
         data, target = Variable(data, volatile=True), Variable(target)
         output = model(data)
-        test_loss += criterion(output, target).data.item()
-        pred = output.data.max(1, keepdim=True)[1]
-        correct += pred.eq(target.data.view_as(pred)).cpu().sum()
+        test_loss += binary_number_criterion(output, target).data.item()
+        correct += binary_number_correct(output, target)
     
     acc = 100. * float(correct) / len(test_loader.dataset)
     if (acc > best_acc):
@@ -120,13 +132,13 @@ if __name__=='__main__':
             datasets.MNIST('data', train=True, download=True,
                 transform=transforms.Compose([
                     transforms.ToTensor(),
-                    transforms.Normalize((0.1307,), (0.3081,))
+                    #transforms.Normalize((0.1307,), (0.3081,))
                     ])),
                 batch_size=args.batch_size, shuffle=True, **kwargs)
     test_loader = torch.utils.data.DataLoader(
             datasets.MNIST('data', train=False, transform=transforms.Compose([
                 transforms.ToTensor(),
-                transforms.Normalize((0.1307,), (0.3081,))
+                #transforms.Normalize((0.1307,), (0.3081,))
                 ])),
             batch_size=args.test_batch_size, shuffle=True, **kwargs)
     
@@ -147,11 +159,8 @@ if __name__=='__main__':
     if args.cuda:
         model.cuda()
     
-    print(model)
     param_dict = dict(model.named_parameters())
     params = []
-    
-    base_lr = 0.1
     
     for key, value in param_dict.items():
         params += [{'params':[value], 'lr': args.lr,
@@ -161,7 +170,6 @@ if __name__=='__main__':
     optimizer = optim.Adam(params, lr=args.lr,
             weight_decay=args.weight_decay)
 
-    criterion = torch.nn.CrossEntropyLoss()
 
     if args.evaluate:
         test(evaluate=True)
